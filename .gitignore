@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Bases de datos locales
+*.db
+*.sqlite3
+
+# Entorno
+.env
+# Override local para probar servicios internos publicando puertos (NO se commitea)
+docker-compose.override.yml
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Evidencia generada (se versiona solo la que se elija para el informe)
+evidencia/tmp/
+
+

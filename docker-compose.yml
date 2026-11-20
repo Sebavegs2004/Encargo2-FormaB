@@ -1,0 +1,107 @@
+x-python-service: &python-service
+  restart: unless-stopped
+  networks: [backend]
+
+services:
+  # ---------- Punto de entrada (unico expuesto) ----------
+  api-gateway:
+    <<: *python-service
+    build: ./api-gateway
+    ports:
+      - "8080:8000"
+    environment:
+      GATEWAY_TOKEN: ${GATEWAY_TOKEN:-token-clinica-123}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-30}
+      BFF_URL: http://bff-web:8000
+      ORQUESTADOR_URL: http://orquestador:8000
+      UPSTREAM_TIMEOUT_SECONDS: "5"
+    depends_on:
+      bff-web: { condition: service_healthy }
+      orquestador: { condition: service_healthy }
+    healthcheck: &healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------- BFF (interno) ----------
+  bff-web:
+    <<: *python-service
+    build: ./bff-web
+    environment:
+      AGENDA_URL: http://agenda:8000
+      PAGOS_URL: http://pagos:8000
+      FICHA_URL: http://ficha:8000
+      UPSTREAM_TIMEOUT_SECONDS: "2"
+    depends_on:
+      agenda: { condition: service_healthy }
+      ficha: { condition: service_healthy }
+      pagos: { condition: service_healthy }
+    healthcheck: *healthcheck
+
+  # ---------- Orquestador de la Saga (interno) ----------
+  orquestador:
+    <<: *python-service
+    build: ./orquestador
+    environment:
+      DATABASE_URL: sqlite:////data/orquestador.db
+      AGENDA_URL: http://agenda:8000
+      PAGOS_URL: http://pagos:8000
+      FICHA_URL: http://ficha:8000
+      # Timeouts por dependencia (segundos). Pagos es la dependencia fragil.
+      TIMEOUT_AGENDA_SECONDS: "2"
+      TIMEOUT_PAGOS_SECONDS: "2"
+      TIMEOUT_FICHA_SECONDS: "2"
+      # Parametros de resiliencia sobre Pagos (se usan en los commits de Mazulin)
+      BREAKER_FAILURE_THRESHOLD: "3"
+      BREAKER_RESET_SECONDS: "10"
+      BULKHEAD_MAX_CONCURRENT: "5"
+    volumes:
+      - orquestador-data:/data
+    depends_on:
+      agenda: { condition: service_healthy }
+      pagos: { condition: service_healthy }
+      ficha: { condition: service_healthy }
+    healthcheck: *healthcheck
+
+  # ---------- Servicios de dominio (internos, cada uno con su BD) ----------
+  agenda:
+    <<: *python-service
+    build: ./agenda
+    environment:
+      DATABASE_URL: sqlite:////data/agenda.db
+    volumes:
+      - agenda-data:/data
+    healthcheck: *healthcheck
+
+  pagos:
+    <<: *python-service
+    build: ./pagos
+    environment:
+      DATABASE_URL: sqlite:////data/pagos.db
+      # Pasarela externa SIMULADA: se controla por entorno / endpoint admin.
+      PASARELA_LATENCIA_MS: ${PASARELA_LATENCIA_MS:-0}
+      PASARELA_FALLA: ${PASARELA_FALLA:-false}
+    volumes:
+      - pagos-data:/data
+    healthcheck: *healthcheck
+
+  ficha:
+    <<: *python-service
+    build: ./ficha
+    environment:
+      DATABASE_URL: sqlite:////data/ficha.db
+      FICHA_FALLA_CONFIRMAR: ${FICHA_FALLA_CONFIRMAR:-false}
+    volumes:
+      - ficha-data:/data
+    healthcheck: *healthcheck
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  orquestador-data:
+  agenda-data:
+  pagos-data:
+  ficha-data:
