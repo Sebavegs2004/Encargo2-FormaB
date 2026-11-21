@@ -5,7 +5,14 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from . import models, schemas
-from .clients import cobrar_abono, confirmar_cita, reservar_hora
+from .clients import (
+    anular_cita,
+    cobrar_abono,
+    confirmar_cita,
+    liberar_hora,
+    reservar_hora,
+    reembolsar,
+)
 from .database import Base, engine, get_db
 
 Base.metadata.create_all(bind=engine)
@@ -78,23 +85,35 @@ def agendar_consulta(
     db.commit()
     db.refresh(saga)
 
-    paso_actual = None  # nombre del paso que se esta ejecutando (para el registro de error)
+    # Lista de pasos ya ejecutados con exito: (nombre_paso, funcion_compensacion).
+    # Se usa para compensar en orden inverso si un paso posterior falla.
+    pasos_completados = []
+
+    # Mapeo de cada paso hacia su funcion de compensacion.
+    compensaciones = {
+        "reservar_hora": liberar_hora,
+        "cobrar_abono": reembolsar,
+        "confirmar_cita": anular_cita,
+    }
 
     try:
         # Paso 1: reservar la hora en Agenda.
         paso_actual = "reservar_hora"
         reservar_hora(saga_id, datos.mascota_id, datos.slot_id)
         registrar_paso(db, saga_id, paso_actual, "OK")
+        pasos_completados.append(paso_actual)
 
         # Paso 2: cobrar el abono en Pagos.
         paso_actual = "cobrar_abono"
         cobrar_abono(saga_id, datos.monto)
         registrar_paso(db, saga_id, paso_actual, "OK")
+        pasos_completados.append(paso_actual)
 
         # Paso 3: confirmar la cita en Ficha.
         paso_actual = "confirmar_cita"
         confirmar_cita(saga_id, datos.mascota_id, datos.slot_id)
         registrar_paso(db, saga_id, paso_actual, "OK")
+        pasos_completados.append(paso_actual)
 
         # Todos los pasos fueron exitosos: marcar la saga como COMPLETADA.
         saga.estado = "COMPLETADA"
@@ -103,13 +122,27 @@ def agendar_consulta(
         return saga
 
     except Exception as exc:
-        # Un paso fallo. Por ahora (commit 5) solo marcamos la saga como FALLIDA
-        # y registramos el error. Las compensaciones en orden inverso se
-        # implementan en el commit 6.
+        # Un paso fallo. Registramos el paso fallido como ERROR.
         detalle = f"{type(exc).__name__}: {exc}"
         if paso_actual is not None:
             registrar_paso(db, saga_id, paso_actual, "ERROR", detalle)
-        saga.estado = "FALLIDA"
+
+        # Compensar en orden inverso: del ultimo paso OK al primero.
+        estado_final = "COMPENSADA"
+        for paso in reversed(pasos_completados):
+            funcion_compensacion = compensaciones[paso]
+            try:
+                funcion_compensacion(saga_id)
+                registrar_paso(db, saga_id, paso, "COMPENSADO")
+            except Exception as exc_comp:
+                # Si una compensacion falla, no podemos garantizar consistencia.
+                detalle_comp = f"{type(exc_comp).__name__}: {exc_comp}"
+                registrar_paso(
+                    db, saga_id, paso, "ERROR", f"compensacion fallo: {detalle_comp}"
+                )
+                estado_final = "FALLIDA"
+
+        saga.estado = estado_final
         db.commit()
         db.refresh(saga)
         return saga
