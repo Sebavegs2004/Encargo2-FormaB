@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
 
@@ -18,6 +18,10 @@ class Saga(Base):
     estado: Mapped[str] = mapped_column(String(20), default="EN_CURSO")
     creada_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # Lista de pasos/compensaciones ejecutados para esta saga.
+    # Se usa en SagaOut (from_attributes) para devolver el historial al cliente.
+    pasos: Mapped[list["SagaPaso"]] = relationship(back_populates="saga", cascade="all, delete-orphan")
+
 
 class SagaPaso(Base):
     """Bitacora de cada paso/compensacion ejecutado (sirve como evidencia ABET 6)."""
@@ -29,3 +33,6 @@ class SagaPaso(Base):
     resultado: Mapped[str] = mapped_column(String(10))
     detalle: Mapped[str | None] = mapped_column(Text, nullable=True)
     ocurrido_en: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Referencia a la saga a la que pertenece este paso.
+    saga: Mapped["Saga"] = relationship(back_populates="pasos")
