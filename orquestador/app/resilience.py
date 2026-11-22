@@ -1,7 +1,7 @@
 """Resiliencia del orquestador frente a Pagos.
 
-Circuit Breaker y respuesta de degradación controlada implementados con la
-biblioteca estándar: clases simples, `time` y `threading`.
+Circuit Breaker, Bulkhead y respuesta de degradación controlada implementados
+con la biblioteca estándar: clases simples, `time` y `threading`.
 """
 import json
 import logging
@@ -14,6 +14,9 @@ BREAKER_FAILURE_THRESHOLD = int(os.getenv("BREAKER_FAILURE_THRESHOLD", "3"))
 
 # Tiempo que el circuito permanece abierto antes de permitir una prueba.
 BREAKER_RESET_SECONDS = float(os.getenv("BREAKER_RESET_SECONDS", "10"))
+
+# Cupo máximo de llamadas concurrentes a Pagos. Los rechazos son inmediatos.
+BULKHEAD_MAX_CONCURRENT = int(os.getenv("BULKHEAD_MAX_CONCURRENT", "5"))
 
 logger = logging.getLogger("resiliencia")
 if not logger.handlers:
@@ -127,6 +130,54 @@ circuitos = {
         reinicio_segundos=BREAKER_RESET_SECONDS,
         nombre="pagos",
     )
+}
+
+
+class Bulkhead:
+    """Bulkhead que limita la concurrencia sobre Pagos sin bloquear al hilo.
+
+    Usa un BoundedSemaphore en modo no bloqueante: si no hay cupo, rechaza al
+    instante. Un lock independiente protege sólo los contadores.
+    """
+
+    def __init__(self, max_concurrent: int, nombre: str = "pagos"):
+        self.nombre = nombre
+        self.max_concurrent = max_concurrent
+        self._semaforo = threading.BoundedSemaphore(max_concurrent)
+
+        self._contadores_lock = threading.Lock()
+        self.rechazos = 0
+        self.cupos_en_uso = 0
+
+    def adquirir(self) -> bool:
+        """Toma un cupo. True = puede llamar; False = rechazo inmediato."""
+        conseguido = self._semaforo.acquire(blocking=False)
+        with self._contadores_lock:
+            if conseguido:
+                self.cupos_en_uso += 1
+            else:
+                self.rechazos += 1
+        return conseguido
+
+    def liberar(self) -> None:
+        """Devuelve el cupo tomado."""
+        self._semaforo.release()
+        with self._contadores_lock:
+            self.cupos_en_uso -= 1
+
+    def estado_actual(self) -> dict:
+        """Snapshot del bulkhead."""
+        with self._contadores_lock:
+            return {
+                "max_concurrent": self.max_concurrent,
+                "cupos_en_uso": self.cupos_en_uso,
+                "rechazos": self.rechazos,
+            }
+
+
+# Instancia única compartida por todas las sagas del orquestador.
+bulkheads = {
+    "pagos": Bulkhead(max_concurrent=BULKHEAD_MAX_CONCURRENT, nombre="pagos")
 }
 
 

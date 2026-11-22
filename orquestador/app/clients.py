@@ -11,7 +11,7 @@ import os
 
 import httpx
 
-from .resilience import PagosNoDisponible, circuitos, fallback_pagos
+from .resilience import PagosNoDisponible, bulkheads, circuitos, fallback_pagos
 
 logger = logging.getLogger("fallback")
 if not logger.handlers:
@@ -43,36 +43,53 @@ def reservar_hora(saga_id: str, mascota_id: int, slot_id: int):
         return response.json()
 
 
-def cobrar_abono(saga_id: str, monto: int):
-    """Paso 2 de la Saga: cobra el abono en Pagos, protegido por Circuit Breaker.
+def _rechazar_pagos(saga_id: str, motivo: str):
+    """Registra el rechazo y lanza el fallback como excepción.
 
-    Si el circuito está abierto no se crea el cliente HTTP y se falla de inmediato.
-    El fallback se lanza como excepción: devolverlo como éxito marcaría el paso
-    como correcto y la saga no compensaría la hora ya reservada.
+    Devolverlo como éxito marcaría el paso como correcto y la saga no
+    compensaría la hora ya reservada.
     """
+    respuesta = fallback_pagos()
+    logger.info(json.dumps({
+        "evento": "fallback_pagos",
+        "saga_id": saga_id,
+        "motivo": motivo,
+        "respuesta": respuesta["estado"],
+    }, separators=(",", ":"), ensure_ascii=False))
+    raise PagosNoDisponible(respuesta)
+
+
+def cobrar_abono(saga_id: str, monto: int):
+    """Paso 2 de la Saga: cobra el abono en Pagos con resiliencia por capas.
+
+    Primero el bulkhead (rechazo inmediato sin cupo), luego el circuit breaker
+    (fail-fast si está abierto) y finalmente la llamada HTTP con su timeout.
+    El cupo se libera siempre, incluso si la llamada falla o expira.
+    """
+    bulkhead = bulkheads["pagos"]
     breaker = circuitos["pagos"]
 
-    if not breaker.permitir():
-        respuesta = fallback_pagos()
-        logger.info(json.dumps({
-            "evento": "fallback_pagos",
-            "saga_id": saga_id,
-            "respuesta": respuesta["estado"],
-        }, separators=(",", ":"), ensure_ascii=False))
-        raise PagosNoDisponible(respuesta)
+    if not bulkhead.adquirir():
+        _rechazar_pagos(saga_id, "bulkhead_sin_cupo")
 
-    url = f"{PAGOS_URL}/pagos/cobrar"
-    payload = {"saga_id": saga_id, "monto": monto}
     try:
-        with httpx.Client(timeout=TIMEOUT_PAGOS) as client:
-            response = client.post(url, json=payload)
-            response.raise_for_status()
-        breaker.registrar_exito()
-        return response.json()
-    except Exception:
-        # Incluye timeout, error de conexión y HTTP 502 de la pasarela simulada.
-        breaker.registrar_fallo()
-        raise
+        if not breaker.permitir():
+            _rechazar_pagos(saga_id, "circuito_abierto")
+
+        url = f"{PAGOS_URL}/pagos/cobrar"
+        payload = {"saga_id": saga_id, "monto": monto}
+        try:
+            with httpx.Client(timeout=TIMEOUT_PAGOS) as client:
+                response = client.post(url, json=payload)
+                response.raise_for_status()
+            breaker.registrar_exito()
+            return response.json()
+        except Exception:
+            # Timeout, error de conexión o HTTP 502 de la pasarela simulada.
+            breaker.registrar_fallo()
+            raise
+    finally:
+        bulkhead.liberar()
 
 
 def confirmar_cita(saga_id: str, mascota_id: int, slot_id: int):
