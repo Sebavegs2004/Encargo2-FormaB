@@ -5,9 +5,20 @@ usando httpx con el timeout configurado por variable de entorno. Si la respuesta
 no es exitosa (status >= 400), se lanza una excepcion para que el orquestador
 pueda decidir si compensa o marca la saga como fallida.
 """
+import json
+import logging
 import os
 
 import httpx
+
+from .resilience import PagosNoDisponible, circuitos, fallback_pagos
+
+logger = logging.getLogger("fallback")
+if not logger.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(_handler)
+    logger.setLevel(logging.INFO)
 
 AGENDA_URL = os.getenv("AGENDA_URL", "http://agenda:8000")
 PAGOS_URL = os.getenv("PAGOS_URL", "http://pagos:8000")
@@ -33,18 +44,35 @@ def reservar_hora(saga_id: str, mascota_id: int, slot_id: int):
 
 
 def cobrar_abono(saga_id: str, monto: int):
-    """Paso 2 de la Saga: cobra el abono en Pagos.
+    """Paso 2 de la Saga: cobra el abono en Pagos, protegido por Circuit Breaker.
 
-    Pagos es la dependencia fragil (pasarela externa simulada). El timeout
-    y el circuit breaker/bulkhead (commit de Mazulin) se aplican sobre esta
-    llamada para evitar cascadas de falla.
+    Si el circuito está abierto no se crea el cliente HTTP y se falla de inmediato.
+    El fallback se lanza como excepción: devolverlo como éxito marcaría el paso
+    como correcto y la saga no compensaría la hora ya reservada.
     """
+    breaker = circuitos["pagos"]
+
+    if not breaker.permitir():
+        respuesta = fallback_pagos()
+        logger.info(json.dumps({
+            "evento": "fallback_pagos",
+            "saga_id": saga_id,
+            "respuesta": respuesta["estado"],
+        }, separators=(",", ":"), ensure_ascii=False))
+        raise PagosNoDisponible(respuesta)
+
     url = f"{PAGOS_URL}/pagos/cobrar"
     payload = {"saga_id": saga_id, "monto": monto}
-    with httpx.Client(timeout=TIMEOUT_PAGOS) as client:
-        response = client.post(url, json=payload)
-        response.raise_for_status()
+    try:
+        with httpx.Client(timeout=TIMEOUT_PAGOS) as client:
+            response = client.post(url, json=payload)
+            response.raise_for_status()
+        breaker.registrar_exito()
         return response.json()
+    except Exception:
+        # Incluye timeout, error de conexión y HTTP 502 de la pasarela simulada.
+        breaker.registrar_fallo()
+        raise
 
 
 def confirmar_cita(saga_id: str, mascota_id: int, slot_id: int):
