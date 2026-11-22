@@ -13,10 +13,19 @@ from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .database import Base, engine, get_db
+from .observabilidad import instalar_middleware, obtener_metricas
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Pagos")
+
+instalar_middleware(app, servicio="pagos")
+
+
+@app.get("/metrics")
+def metrics():
+    """Contadores en memoria de requests y errores desde que arranco el servicio."""
+    return obtener_metricas("pagos")
 
 # Variables de MODULO (no constantes): /admin/chaos las reasigna sin reiniciar el proceso.
 # llamar_pasarela_externa las lee en cada llamada, asi que el cambio surte efecto al instante.

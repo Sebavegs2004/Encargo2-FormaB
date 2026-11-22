@@ -6,10 +6,19 @@ from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .database import Base, SessionLocal, engine, get_db
+from .observabilidad import instalar_middleware, obtener_metricas
 
 Base.metadata.create_all(bind=engine)  # crea las tablas si no existen
 
 app = FastAPI(title="Agenda")
+
+instalar_middleware(app, servicio="agenda")
+
+
+@app.get("/metrics")
+def metrics():
+    """Contadores en memoria de requests y errores desde que arranco el servicio."""
+    return obtener_metricas("agenda")
 
 # Horarios de ejemplo para poder probar la saga sin cargar datos a mano.
 # Se insertan solo si la tabla esta vacia: un reinicio del contenedor no debe duplicarlos.

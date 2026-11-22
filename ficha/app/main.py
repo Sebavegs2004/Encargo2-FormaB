@@ -7,10 +7,19 @@ from sqlalchemy.orm import Session
 
 from . import models, schemas
 from .database import Base, SessionLocal, engine, get_db
+from .observabilidad import instalar_middleware, obtener_metricas
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Ficha")
+
+instalar_middleware(app, servicio="ficha")
+
+
+@app.get("/metrics")
+def metrics():
+    """Contadores en memoria de requests y errores desde que arranco el servicio."""
+    return obtener_metricas("ficha")
 
 # Variable de MODULO (no constante): /admin/fallo la reasigna sin reiniciar el contenedor.
 FICHA_FALLA_CONFIRMAR = os.getenv("FICHA_FALLA_CONFIRMAR", "false").lower() == "true"

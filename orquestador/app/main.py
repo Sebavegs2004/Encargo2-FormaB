@@ -14,10 +14,19 @@ from .clients import (
     reembolsar,
 )
 from .database import Base, engine, get_db
+from .observabilidad import instalar_middleware, obtener_metricas
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Orquestador")
+
+instalar_middleware(app, servicio="orquestador")
+
+
+@app.get("/metrics")
+def metrics():
+    """Contadores en memoria de requests y errores desde que arranco el servicio."""
+    return obtener_metricas("orquestador")
 
 AGENDA_URL = os.getenv("AGENDA_URL", "http://agenda:8000")
 PAGOS_URL = os.getenv("PAGOS_URL", "http://pagos:8000")
