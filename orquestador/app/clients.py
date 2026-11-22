@@ -11,7 +11,14 @@ import os
 
 import httpx
 
-from .resilience import PagosNoDisponible, bulkheads, circuitos, fallback_pagos
+from .resilience import (
+    BREAKER_ENABLED,
+    BULKHEAD_ENABLED,
+    PagosNoDisponible,
+    bulkheads,
+    circuitos,
+    fallback_pagos,
+)
 
 logger = logging.getLogger("fallback")
 if not logger.handlers:
@@ -69,11 +76,12 @@ def cobrar_abono(saga_id: str, monto: int):
     bulkhead = bulkheads["pagos"]
     breaker = circuitos["pagos"]
 
-    if not bulkhead.adquirir():
+    cupo_tomado = bulkhead.adquirir() if BULKHEAD_ENABLED else True
+    if not cupo_tomado:
         _rechazar_pagos(saga_id, "bulkhead_sin_cupo")
 
     try:
-        if not breaker.permitir():
+        if BREAKER_ENABLED and not breaker.permitir():
             _rechazar_pagos(saga_id, "circuito_abierto")
 
         url = f"{PAGOS_URL}/pagos/cobrar"
@@ -82,14 +90,17 @@ def cobrar_abono(saga_id: str, monto: int):
             with httpx.Client(timeout=TIMEOUT_PAGOS) as client:
                 response = client.post(url, json=payload)
                 response.raise_for_status()
-            breaker.registrar_exito()
+            if BREAKER_ENABLED:
+                breaker.registrar_exito()
             return response.json()
         except Exception:
             # Timeout, error de conexión o HTTP 502 de la pasarela simulada.
-            breaker.registrar_fallo()
+            if BREAKER_ENABLED:
+                breaker.registrar_fallo()
             raise
     finally:
-        bulkhead.liberar()
+        if cupo_tomado and BULKHEAD_ENABLED:
+            bulkhead.liberar()
 
 
 def confirmar_cita(saga_id: str, mascota_id: int, slot_id: int):

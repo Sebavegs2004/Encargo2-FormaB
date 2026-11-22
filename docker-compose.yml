@@ -52,10 +52,12 @@ services:
       TIMEOUT_AGENDA_SECONDS: "2"
       TIMEOUT_PAGOS_SECONDS: "2"
       TIMEOUT_FICHA_SECONDS: "2"
-      # Parametros de resiliencia sobre Pagos (se usan en los commits de Mazulin)
+      # Parametros de resiliencia sobre Pagos
       BREAKER_FAILURE_THRESHOLD: "3"
       BREAKER_RESET_SECONDS: "10"
       BULKHEAD_MAX_CONCURRENT: "5"
+      BREAKER_ENABLED: ${BREAKER_ENABLED:-true}
+      BULKHEAD_ENABLED: ${BULKHEAD_ENABLED:-true}
     volumes:
       - orquestador-data:/data
     depends_on:

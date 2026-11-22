@@ -18,6 +18,15 @@ BREAKER_RESET_SECONDS = float(os.getenv("BREAKER_RESET_SECONDS", "10"))
 # Cupo máximo de llamadas concurrentes a Pagos. Los rechazos son inmediatos.
 BULKHEAD_MAX_CONCURRENT = int(os.getenv("BULKHEAD_MAX_CONCURRENT", "5"))
 
+
+def _enabled(nombre: str) -> bool:
+    """Interpreta una variable de entorno booleana; solo "true" la activa."""
+    return os.getenv(nombre, "true").strip().lower() == "true"
+
+
+BREAKER_ENABLED = _enabled("BREAKER_ENABLED")
+BULKHEAD_ENABLED = _enabled("BULKHEAD_ENABLED")
+
 logger = logging.getLogger("resiliencia")
 if not logger.handlers:
     _handler = logging.StreamHandler()
@@ -191,4 +200,21 @@ def fallback_pagos() -> dict:
         "estado": "pagos_no_disponible",
         "degradado": True,
         "mensaje": "Pagos no esta disponible; la saga se compensara sin llamar a la pasarela",
+    }
+
+
+def metricas_resiliencia() -> dict:
+    """Estado de los patrones de resiliencia sobre Pagos."""
+    breaker = circuitos["pagos"].estado_actual()
+    bulkhead = bulkheads["pagos"].estado_actual()
+    return {
+        "breaker_enabled": BREAKER_ENABLED,
+        "bulkhead_enabled": BULKHEAD_ENABLED,
+        "estado_circuito": breaker["estado"],
+        "fallos_consecutivos": breaker["fallos_consecutivos"],
+        "llamadas_rechazadas_circuito": breaker["llamadas_rechazadas"],
+        "llamadas_rechazadas_bulkhead": bulkhead["rechazos"],
+        "llamadas_permitidas_circuito": breaker["llamadas_permitidas"],
+        "cupos_bulkhead_en_uso": bulkhead["cupos_en_uso"],
+        "cupos_bulkhead_max": bulkhead["max_concurrent"],
     }

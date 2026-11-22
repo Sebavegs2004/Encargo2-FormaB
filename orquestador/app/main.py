@@ -15,6 +15,7 @@ from .clients import (
 )
 from .database import Base, engine, get_db
 from .observabilidad import instalar_middleware, obtener_metricas
+from .resilience import metricas_resiliencia
 
 Base.metadata.create_all(bind=engine)
 
@@ -25,8 +26,10 @@ instalar_middleware(app, servicio="orquestador")
 
 @app.get("/metrics")
 def metrics():
-    """Contadores en memoria de requests y errores desde que arranco el servicio."""
-    return obtener_metricas("orquestador")
+    """Contadores de requests y estado de los patrones de resiliencia."""
+    datos = obtener_metricas("orquestador")
+    datos["resiliencia"] = metricas_resiliencia()
+    return datos
 
 AGENDA_URL = os.getenv("AGENDA_URL", "http://agenda:8000")
 PAGOS_URL = os.getenv("PAGOS_URL", "http://pagos:8000")
