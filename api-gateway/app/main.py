@@ -9,7 +9,9 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 import httpx
 
-app = FastAPI(title="API Gateway")
+from . import ratelimit
+
+app =FastAPI(title="API Gateway")
 
 GATEWAY_TOKEN = os.getenv("GATEWAY_TOKEN", "token-clinica-123")
 RATE_LIMIT_PER_MINUTE = int(os.getenv("RATE_LIMIT_PER_MINUTE", "30"))
@@ -20,11 +22,11 @@ UPSTREAM_TIMEOUT = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "5"))
 
 @app.middleware("http")
 async def exigir_token(request: Request, call_next):
-    """Exige 'Authorization: Bearer <GATEWAY_TOKEN>' en todas las rutas /api/*.
+    """Exige 'Authorization: Bearer <GATEWAY_TOKEN>' y limita las peticiones por cliente.
 
     El token se valida solo aqui: los servicios internos no estan expuestos y
-    confian en que el gateway ya autentico al cliente. /health queda libre para
-    los healthchecks de Docker.
+    confian en que el gateway ya autentico al cliente. /health queda libre (sin
+    token ni limite) para los healthchecks de Docker.
     """
     if request.url.path.startswith("/api/"):
         autorizacion = request.headers.get("Authorization", "")
@@ -33,6 +35,16 @@ async def exigir_token(request: Request, call_next):
                 status_code=401,
                 content={"detail": "Token invalido o ausente"},
                 headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Rate limiting: se aplica despues de autenticar, por cliente (token + IP).
+        ip = request.client.host if request.client else "desconocido"
+        espera = ratelimit.revisar(f"{autorizacion}|{ip}", RATE_LIMIT_PER_MINUTE)
+        if espera > 0:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Demasiadas peticiones, intenta mas tarde"},
+                headers={"Retry-After": str(espera)},
             )
     return await call_next(request)
 
