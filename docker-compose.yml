@@ -14,10 +14,17 @@ services:
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-30}
       BFF_URL: http://bff-web:8000
       ORQUESTADOR_URL: http://orquestador:8000
+      # El panel de administracion reenvia a los servicios de dominio.
+      AGENDA_URL: http://agenda:8000
+      PAGOS_URL: http://pagos:8000
+      FICHA_URL: http://ficha:8000
       UPSTREAM_TIMEOUT_SECONDS: "5"
     depends_on:
       bff-web: { condition: service_healthy }
       orquestador: { condition: service_healthy }
+      agenda: { condition: service_healthy }
+      pagos: { condition: service_healthy }
+      ficha: { condition: service_healthy }
     healthcheck: &healthcheck
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 5s

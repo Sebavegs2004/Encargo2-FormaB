@@ -223,6 +223,12 @@ function Invoke-Corrida($modo, $patrones) {
     Set-ChaosPagos 0 $false
     $metCaido | ConvertTo-Json | Set-Content -Path (Join-Path $carpeta "metricas_final.json") -Encoding utf8
 
+    # Logs de resiliencia como evidencia (ademas de los tiempos y las metricas).
+    $logs = @(docker compose logs --no-color orquestador 2>&1 | Select-String -Pattern 'circuit_breaker|fallback_pagos|bulkhead')
+    $lineas = @("Logs del orquestador filtrados (circuit_breaker|fallback_pagos|bulkhead) - modo: $modo") + @($logs | ForEach-Object { $_.Line })
+    $lineas | Set-Content -Path (Join-Path $carpeta "logs.txt") -Encoding utf8
+    Log "  Logs guardados en evidencia\escenario3\$modo\logs.txt"
+
     return [pscustomobject]@{
         modo = $modo; base = $base; lento = $lento; caido = $caido
         estadoCircuito = $metCaido.estado_circuito

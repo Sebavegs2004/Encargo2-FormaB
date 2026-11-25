@@ -1,7 +1,8 @@
 """Servicio Agenda: reserva y libera la hora del veterinario (Paso 1 de la Saga)."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import Depends, FastAPI, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -153,3 +154,36 @@ def liberar(saga_id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(reserva)
     return reserva
+
+
+class SlotsAdminIn(BaseModel):
+    """Cuerpo de /admin/slots: cuantos horarios de prueba agregar."""
+
+    cantidad: int = 1
+
+
+@app.post("/admin/slots")
+def agregar_slots_admin(datos: SlotsAdminIn, db: Session = Depends(get_db)):
+    """Agrega horarios LIBRES para poder repetir las demostraciones en vivo.
+
+    Es una operacion de administracion: no forma parte de Agendar una consulta.
+    La saga sigue reservando con su condicion 'solo si estaba LIBRE'.
+    """
+    cantidad = max(0, min(datos.cantidad, 100))
+    if cantidad == 0:
+        return {"agregados": 0, "ids": []}
+
+    ya_existentes = db.query(models.Slot).count()
+    base = datetime(2027, 1, 1)
+    ids = []
+    for indice in range(cantidad):
+        slot = models.Slot(
+            veterinario="Dr. Carga",
+            inicio=base + timedelta(hours=ya_existentes + indice),
+            estado="LIBRE",
+        )
+        db.add(slot)
+        db.flush()
+        ids.append(slot.id)
+    db.commit()
+    return {"agregados": cantidad, "ids": ids}

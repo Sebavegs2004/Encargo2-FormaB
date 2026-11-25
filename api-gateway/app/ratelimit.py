@@ -17,6 +17,24 @@ _lock = threading.Lock()
 # cliente -> [inicio_de_ventana, cantidad_de_peticiones]
 _contadores: dict[str, list] = {}
 
+# Limite sobreescrito en caliente desde el panel de administracion. None = usar
+# el valor de entorno con el que arranco el gateway.
+_limite_temporal: int | None = None
+
+
+def configurar_limite(por_minuto: int | None) -> int:
+    """Cambia el limite por minuto en caliente; None lo devuelve al valor inicial."""
+    global _limite_temporal
+    with _lock:
+        _limite_temporal = None if por_minuto is None else max(1, por_minuto)
+    return _limite_temporal or 0
+
+
+def limite_actual(valor_inicial: int) -> int:
+    """Devuelve el limite vigente sin exponer candados al middleware."""
+    with _lock:
+        return _limite_temporal if _limite_temporal is not None else valor_inicial
+
 
 def revisar(cliente: str, limite: int) -> int:
     """Registra una peticion del cliente y decide si puede pasar.

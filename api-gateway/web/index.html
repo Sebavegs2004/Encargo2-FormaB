@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Agenda de consultas de VetClínica">
+  <title>VetClínica · Agenda de consultas</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9.4 2.8h5.2a.9.9 0 0 1 .9.9v5.7h5.7a.9.9 0 0 1 .9.9v5.2a.9.9 0 0 1-.9.9h-5.7v5.7a.9.9 0 0 1-.9.9H9.4a.9.9 0 0 1-.9-.9v-5.7H2.8a.9.9 0 0 1-.9-.9v-5.2a.9.9 0 0 1 .9-.9h5.7V3.7a.9.9 0 0 1 .9-.9Z"/></svg>
+      </span>
+      <span class="brand-text"><strong>VetClínica</strong><small>Agenda de consultas</small></span>
+    </div>
+    <span id="estado-servicio" class="status-pill status-pill--pendiente">Verificando servicios…</span>
+  </header>
+
+  <nav class="tabs" aria-label="Navegación principal">
+    <button type="button" class="tab is-active" data-vista="agendar" aria-current="page">Agendar consulta</button>
+    <button type="button" class="tab" data-vista="mascotas">Mascotas y citas</button>
+    <button type="button" class="tab" data-vista="solicitudes">Estado de solicitud</button>
+    <button type="button" class="tab" data-vista="admin">Administración</button>
+  </nav>
+
+  <main class="contenedor">
+    <!-- ------------------------------- AGENDAR ------------------------------- -->
+    <section id="vista-agendar" class="vista is-active" aria-labelledby="titulo-agendar">
+      <div class="cabecera-pagina">
+        <p class="eyebrow">Recepción</p>
+        <h1 id="titulo-agendar">Agendar una consulta</h1>
+        <p class="bajada">Elige la mascota y la hora. Nosotros reservamos el horario, registramos el abono y dejamos la cita confirmada en su ficha.</p>
+      </div>
+
+      <div class="columnas">
+        <form id="form-cita" class="tarjeta formulario" novalidate>
+          <div class="tarjeta-titulo">
+            <span class="numero-paso">1</span>
+            <div><h2>Mascota</h2><p>Selecciona el paciente</p></div>
+          </div>
+          <label class="campo">
+            <span>Paciente</span>
+            <select id="mascota-select" name="mascota"><option value="">Cargando mascotas…</option></select>
+          </label>
+          <p id="mascota-info" class="info-suave"></p>
+
+          <hr class="separador">
+
+          <div class="tarjeta-titulo">
+            <span class="numero-paso">2</span>
+            <div><h2>Fecha y hora</h2><p>Horarios con el equipo veterinario</p></div>
+          </div>
+          <div id="slots-lista" class="slots" role="radiogroup" aria-label="Horarios disponibles">
+            <p class="vacio">Cargando disponibilidad…</p>
+          </div>
+
+          <hr class="separador">
+
+          <div class="tarjeta-titulo">
+            <span class="numero-paso">3</span>
+            <div><h2>Abono</h2><p>Se registra al confirmar la reserva</p></div>
+          </div>
+          <label class="campo">
+            <span>Monto a abonar</span>
+            <span class="campo-moneda"><span aria-hidden="true">$</span><input id="monto" name="monto" type="number" min="1" step="500" inputmode="numeric"></span>
+          </label>
+          <p class="info-suave">Si la cita no llega a confirmarse, el abono se devuelve automáticamente.</p>
+
+          <div id="form-error" class="alerta alerta--error" role="alert" hidden></div>
+
+          <div class="acciones">
+            <button id="btn-confirmar" class="btn btn--primario" type="submit">Confirmar y agendar</button>
+            <button id="btn-reintentar" class="btn btn--secundario" type="button" hidden>Reintentar solicitud</button>
+          </div>
+          <p class="clave">Clave de la solicitud: <code id="clave-valor"></code> · permite reintentar sin duplicar la reserva.</p>
+        </form>
+
+        <aside class="tarjeta resumen" aria-label="Resumen de la reserva">
+          <h2>Resumen de la reserva</h2>
+          <dl class="resumen-datos">
+            <div><dt>Mascota</dt><dd id="res-mascota">—</dd></div>
+            <div><dt>Veterinario</dt><dd id="res-veterinario">—</dd></div>
+            <div><dt>Horario</dt><dd id="res-horario">—</dd></div>
+            <div><dt>Abono</dt><dd id="res-abono">—</dd></div>
+          </dl>
+          <div class="flujo">
+            <h3>Qué ocurre al confirmar</h3>
+            <ol>
+              <li><span>1</span><div><strong>Reserva de hora</strong><small>Agenda</small></div></li>
+              <li><span>2</span><div><strong>Registro del abono</strong><small>Pagos</small></div></li>
+              <li><span>3</span><div><strong>Confirmación de la cita</strong><small>Ficha</small></div></li>
+            </ol>
+          </div>
+        </aside>
+      </div>
+
+      <section id="resultado" class="tarjeta resultado" aria-live="polite" hidden></section>
+    </section>
+
+    <!-- ------------------------------ MASCOTAS ------------------------------ -->
+    <section id="vista-mascotas" class="vista" aria-labelledby="titulo-mascotas">
+      <div class="cabecera-pagina">
+        <p class="eyebrow">Pacientes</p>
+        <h1 id="titulo-mascotas">Mascotas y citas</h1>
+        <p class="bajada">Ficha de cada paciente, citas registradas y disponibilidad actual del consultorio.</p>
+      </div>
+
+      <div id="avisos" class="alerta alerta--aviso" role="status" hidden></div>
+      <div id="mascotas-grid" class="mascotas-grid"></div>
+
+      <div class="columnas columnas--abajo">
+        <div class="tarjeta">
+          <h2>Citas registradas</h2>
+          <div id="citas-lista" class="lista"></div>
+        </div>
+        <div class="tarjeta">
+          <h2>Disponibilidad</h2>
+          <div id="slots-estado" class="lista"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ----------------------------- SOLICITUDES ---------------------------- -->
+    <section id="vista-solicitudes" class="vista" aria-labelledby="titulo-solicitudes">
+      <div class="cabecera-pagina">
+        <p class="eyebrow">Seguimiento</p>
+        <h1 id="titulo-solicitudes">Estado de una solicitud</h1>
+        <p class="bajada">Consulta el ID de una solicitud para ver cada paso ejecutado y cómo se resolvió.</p>
+      </div>
+
+      <form id="form-busqueda" class="tarjeta busqueda">
+        <label class="campo">
+          <span>ID de la solicitud</span>
+          <input id="saga-busqueda" type="text" placeholder="Pega aquí el ID de la solicitud" required>
+        </label>
+        <button class="btn btn--primario" type="submit">Buscar</button>
+      </form>
+      <section id="saga-detalle" class="tarjeta resultado" aria-live="polite" hidden></section>
+    </section>
+
+    <!-- ---------------------------- ADMINISTRACIÓN --------------------------- -->
+    <section id="vista-admin" class="vista" aria-labelledby="titulo-admin">
+      <div class="cabecera-pagina">
+        <p class="eyebrow">Operación · demostración</p>
+        <h1 id="titulo-admin">Panel de administración</h1>
+        <p class="bajada">Acciones para inducir fallas, medir la resiliencia y reponer el sistema. No forman parte de la reserva de una consulta.</p>
+      </div>
+
+      <div class="admin-grid">
+        <section class="tarjeta">
+          <div class="tarjeta-titulo">
+            <span class="numero-paso">1</span>
+            <div><h2>Estado de servicios</h2><p>Sonda rápida desde el gateway</p></div>
+            <button type="button" class="btn btn--texto" id="btn-refrescar-salud">Actualizar</button>
+          </div>
+          <div id="salud-servicios" class="salud-grid"></div>
+        </section>
+
+        <section class="tarjeta">
+          <div class="tarjeta-titulo">
+            <span class="numero-paso">2</span>
+            <div><h2>Resiliencia sobre Pagos</h2><p>Circuit Breaker y Bulkhead</p></div>
+            <button type="button" class="btn btn--texto" id="btn-refrescar-metricas">Actualizar</button>
+          </div>
+          <div id="metricas-resiliencia" class="metrica-grid"></div>
+          <p id="metricas-actualizadas" class="info-suave"></p>
+        </section>
+
+        <section class="tarjeta">
+          <h2>Falla en Ficha</h2>
+          <p class="info-suave">Hace fallar el último paso de la saga sin reiniciar el contenedor.</p>
+          <div class="acciones">
+            <button type="button" class="btn btn--peligro" id="btn-ficha-on">Activar falla</button>
+            <button type="button" class="btn btn--secundario" id="btn-ficha-off">Desactivar</button>
+          </div>
+          <p id="estado-ficha" class="info-suave"></p>
+        </section>
+
+        <section class="tarjeta">
+          <h2>Pasarela de Pagos</h2>
+          <p class="info-suave">Latencia y caída de la dependencia frágil, en caliente.</p>
+          <div class="acciones">
+            <button type="button" class="btn btn--secundario" data-chaos="sano">Sano</button>
+            <button type="button" class="btn btn--aviso" data-chaos="lento">Lento 3 s</button>
+            <button type="button" class="btn btn--peligro" data-chaos="caido">Caído</button>
+          </div>
+          <div class="admin-campo">
+            <label class="campo"><span>Latencia personalizada (ms)</span><input id="chaos-latencia" type="number" min="0" step="500" value="0"></label>
+            <label class="casilla"><input id="chaos-falla" type="checkbox"> Pasarela caída</label>
+          </div>
+          <div class="acciones"><button type="button" class="btn btn--primario" id="btn-chaos-aplicar">Aplicar</button></div>
+          <p id="estado-pagos" class="info-suave"></p>
+        </section>
+
+        <section class="tarjeta">
+          <h2>Horarios de prueba</h2>
+          <p class="info-suave">Cada solicitud necesita una hora libre. Agrega horarios si se agotaron durante la demostración.</p>
+          <label class="campo"><span>Cantidad</span><input id="slots-cantidad" type="number" min="1" max="100" value="12"></label>
+          <div class="acciones"><button type="button" class="btn btn--secundario" id="btn-agregar-slots">Agregar horarios</button></div>
+          <p id="estado-slots" class="info-suave"></p>
+        </section>
+
+        <section class="tarjeta">
+          <h2>Carga concurrente</h2>
+          <p class="info-suave">Envía 12 reservas al mismo tiempo para llenar el cupo del Bulkhead (5). Sube el límite del gateway antes.</p>
+          <label class="campo"><span>Límite del gateway por minuto (0 = original)</span><input id="limite-valor" type="number" min="0" value="1000"></label>
+          <div class="acciones">
+            <button type="button" class="btn btn--secundario" id="btn-aplicar-limite">Aplicar límite</button>
+            <button type="button" class="btn btn--primario" id="btn-carga">Enviar 12 reservas</button>
+          </div>
+          <p id="estado-limite" class="info-suave"></p>
+          <div id="resultado-carga" class="lista" aria-live="polite"></div>
+        </section>
+
+        <section class="tarjeta admin-ancho">
+          <h2>Restaurar todo</h2>
+          <p class="info-suave">Desactiva la falla de Ficha, deja Pagos sano y devuelve el rate limit al valor original.</p>
+          <div class="acciones"><button type="button" class="btn btn--primario" id="btn-restaurar">Restaurar servicios</button></div>
+          <p id="estado-restaurar" class="info-suave" role="status"></p>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="pie">VetClínica · Agenda de consultas</footer>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="config.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

@@ -20,8 +20,8 @@ Si un paso falla, el orquestador deshace los anteriores en orden inverso (anular
 | `pagos`       | Cobros y reembolsos (pasarela de pago simulada)       | -                |
 | `ficha`       | Mascotas y citas                                      | -                |
 
-Cada servicio tiene su propia base de datos. Los diagramas y las decisiones de diseno estan en
-[docs/DECISIONES.md](docs/DECISIONES.md) y [docs/DIAGRAMAS.md](docs/DIAGRAMAS.md).
+Cada servicio tiene su propia base de datos. Las decisiones de diseno estan en
+[docs/DECISIONES.md](docs/DECISIONES.md).
 
 ## Requisitos
 
@@ -70,6 +70,20 @@ curl.exe -H "Authorization: Bearer token-clinica-123" http://localhost:8080/api/
 
 El gateway responde `401` sin token valido, `429` (con `Retry-After`) si se pasa del limite,
 `504` si un servicio interno tarda demasiado y `502` si no se puede conectar.
+
+## Web de recepcion
+
+El gateway sirve tambien la interfaz web en [http://localhost:8080](http://localhost:8080) (sin puertos nuevos):
+
+- **Agendar consulta**: elige mascota, horario y abono; muestra el resultado de la saga y su bitacora.
+- **Mascotas y citas**: ficha, citas y disponibilidad, con avisos si el BFF no puede componer una seccion.
+- **Estado de solicitud**: busca una saga por ID para revisar sus pasos y compensaciones.
+- **Administración**: induce la falla de Ficha y la lentitud/caída de Pagos, consulta salud y metricas
+  del orquestador, agrega horarios y ajusta el rate limit para repetir las demostraciones.
+
+La web usa el mismo token del gateway (`api-gateway/web/config.js`) y reintenta con la misma
+`Idempotency-Key` si la peticion se pierde. Levanta el stack con `docker compose up --build -d` y
+abrila directamente en [http://localhost:8080](http://localhost:8080).
 
 ## Escenarios de prueba
 
