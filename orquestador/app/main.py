@@ -169,3 +169,14 @@ def consultar_saga(saga_id: str, db: Session = Depends(get_db)):
     return saga
 
 
+@app.post("/admin/reset")
+def reset_datos_admin(db: Session = Depends(get_db)):
+    """Borra sagas y su bitacora para empezar una demostracion desde cero."""
+    pasos = db.query(models.SagaPaso).count()
+    sagas = db.query(models.Saga).count()
+    db.query(models.SagaPaso).delete()
+    db.query(models.Saga).delete()
+    db.commit()
+    return {"sagas_eliminadas": sagas, "pasos_eliminados": pasos}
+
+

@@ -153,3 +153,12 @@ def configurar_chaos(datos: ChaosIn):
     PASARELA_LATENCIA_MS = max(0, datos.latencia_ms)  # evita latencias negativas
     PASARELA_FALLA = datos.falla
     return {"latencia_ms": PASARELA_LATENCIA_MS, "falla": PASARELA_FALLA}
+
+
+@app.post("/admin/reset")
+def reset_datos_admin(db: Session = Depends(get_db)):
+    """Borra todos los pagos (cobrados y reembolsados)."""
+    eliminados = db.query(models.Pago).count()
+    db.query(models.Pago).delete()
+    db.commit()
+    return {"pagos_eliminados": eliminados}

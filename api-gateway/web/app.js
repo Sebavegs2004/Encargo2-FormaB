@@ -631,6 +631,43 @@ async function restaurarTodo() {
   }
 }
 
+let resetArmado = false;
+let temporizadorReset = null;
+
+async function resetearDatos() {
+  const boton = $('#btn-reset-datos');
+  if (!resetArmado) {
+    resetArmado = true;
+    boton.textContent = 'Confirmar reset (2º clic)';
+    nota('#estado-reset', 'Borra citas, pagos, reservas y sagas; vuelven los horarios y mascotas iniciales.');
+    temporizadorReset = setTimeout(() => {
+      resetArmado = false;
+      boton.textContent = 'Resetear datos';
+      nota('#estado-reset', '');
+    }, 30000);
+    return;
+  }
+
+  clearTimeout(temporizadorReset);
+  resetArmado = false;
+  boton.textContent = 'Resetear datos';
+  boton.disabled = true;
+  try {
+    const { datos, ms } = await api('/api/admin/reset', { metodo: 'POST', cuerpo: {} });
+    const detalle = Object.entries(datos)
+      .filter(([clave]) => clave !== 'indicadores')
+      .map(([clave, valor]) => `${clave} ${Object.values(valor).join('/')}`)
+      .join(' · ');
+    nota('#estado-reset', `Datos reseteados en ${ms} ms (${detalle}).`);
+    await Promise.allSettled([cargarSalud(), cargarMetricas(), cargarResumenes()]);
+    avisar('Datos reseteados.');
+  } catch (error) {
+    nota('#estado-reset', error.message, true);
+  } finally {
+    boton.disabled = false;
+  }
+}
+
 /* --------------------------------- eventos --------------------------------- */
 
 $('#form-cita').addEventListener('submit', confirmarCita);
@@ -704,6 +741,7 @@ $('#btn-agregar-slots').addEventListener('click', agregarHorarios);
 $('#btn-aplicar-limite').addEventListener('click', aplicarLimite);
 $('#btn-carga').addEventListener('click', generarCarga);
 $('#btn-restaurar').addEventListener('click', restaurarTodo);
+$('#btn-reset-datos').addEventListener('click', resetearDatos);
 $('#resultado-carga').addEventListener('click', (evento) => {
   if (evento.target.closest('#btn-refrescar-tras-carga')) {
     cargarMetricas();

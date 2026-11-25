@@ -4,10 +4,11 @@ Solo enruta y autentica: no contiene reglas de negocio ni transforma las
 respuestas. Valida el token Bearer y reenvia la peticion al orquestador o al BFF.
 """
 import asyncio
+import json
 import os
 import time
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -188,6 +189,47 @@ async def admin_limite(datos: LimiteIn):
     """Ajusta el rate limit en caliente para la prueba de carga concurrente."""
     ratelimit.configurar_limite(None if datos.por_minuto <= 0 else datos.por_minuto)
     return {"limite_por_minuto": ratelimit.limite_actual(RATE_LIMIT_PER_MINUTE)}
+
+
+@app.post("/api/admin/reset")
+async def admin_reset():
+    """Reinicia TODOS los datos: sagas, pagos, citas, reservas y horarios/mascotas iniciales.
+
+    No reinicia los contenedores: solo llama a /admin/reset de cada servicio en
+    orden y deja los indicadores de falla y el rate limit en su estado inicial.
+    Debe usarse con el sistema en reposo (sin sagas en curso).
+    """
+    resultados = {}
+    for nombre, url in (
+        ("orquestador", f"{ORQUESTADOR_URL}/admin/reset"),
+        ("pagos", f"{PAGOS_URL}/admin/reset"),
+        ("ficha", f"{FICHA_URL}/admin/reset"),
+        ("agenda", f"{AGENDA_URL}/admin/reset"),
+    ):
+        respuesta = await reenviar("POST", url)
+        if respuesta.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Fallo el reset de {nombre}: {respuesta.body.decode('utf-8', 'replace')}",
+            )
+        resultados[nombre] = json.loads(respuesta.body)
+
+    cabecera = {"Content-Type": "application/json"}
+    await reenviar(
+        "POST", f"{FICHA_URL}/admin/fallo",
+        headers=cabecera, body=b'{"activa": false}',
+    )
+    await reenviar(
+        "POST", f"{PAGOS_URL}/admin/chaos",
+        headers=cabecera, body=b'{"latencia_ms": 0, "falla": false}',
+    )
+    ratelimit.configurar_limite(None)
+    resultados["indicadores"] = {
+        "ficha": "sana",
+        "pagos": "sano",
+        "limite_por_minuto": ratelimit.limite_actual(RATE_LIMIT_PER_MINUTE),
+    }
+    return resultados
 
 
 # La web de recepcion se sirve desde el mismo gateway: un solo puerto y un solo

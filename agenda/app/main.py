@@ -187,3 +187,14 @@ def agregar_slots_admin(datos: SlotsAdminIn, db: Session = Depends(get_db)):
         ids.append(slot.id)
     db.commit()
     return {"agregados": cantidad, "ids": ids}
+
+
+@app.post("/admin/reset")
+def reset_datos_admin(db: Session = Depends(get_db)):
+    """Borra reservas y deja los horarios iniciales LIBRES (incluida una reserva trabada)."""
+    eliminadas = db.query(models.Reserva).count()
+    db.query(models.Reserva).delete()
+    db.query(models.Slot).delete()
+    db.commit()
+    sembrar_slots()
+    return {"reservas_eliminadas": eliminadas, "slots_recreados": db.query(models.Slot).count()}

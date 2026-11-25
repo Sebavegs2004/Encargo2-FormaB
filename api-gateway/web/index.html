@@ -215,10 +215,14 @@
         </section>
 
         <section class="tarjeta admin-ancho">
-          <h2>Restaurar todo</h2>
-          <p class="info-suave">Desactiva la falla de Ficha, deja Pagos sano y devuelve el rate limit al valor original.</p>
-          <div class="acciones"><button type="button" class="btn btn--primario" id="btn-restaurar">Restaurar servicios</button></div>
+          <h2>Restaurar</h2>
+          <p class="info-suave">Servicios: fallas y límite al estado inicial. Datos: borra todo y vuelve a los horarios y mascotas iniciales (libera reservas trabadas).</p>
+          <div class="acciones">
+            <button type="button" class="btn btn--primario" id="btn-restaurar">Restaurar servicios</button>
+            <button type="button" class="btn btn--peligro" id="btn-reset-datos">Resetear datos</button>
+          </div>
           <p id="estado-restaurar" class="info-suave" role="status"></p>
+          <p id="estado-reset" class="info-suave" role="status"></p>
         </section>
       </div>
     </section>

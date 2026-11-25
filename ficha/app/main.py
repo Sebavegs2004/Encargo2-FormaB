@@ -151,3 +151,14 @@ def configurar_fallo(datos: FalloIn):
     global FICHA_FALLA_CONFIRMAR
     FICHA_FALLA_CONFIRMAR = datos.activa
     return {"activa": FICHA_FALLA_CONFIRMAR}
+
+
+@app.post("/admin/reset")
+def reset_datos_admin(db: Session = Depends(get_db)):
+    """Borra citas y mascotas, y vuelve a sembrar las mascotas iniciales."""
+    eliminadas = db.query(models.CitaFicha).count()
+    db.query(models.CitaFicha).delete()
+    db.query(models.Mascota).delete()
+    db.commit()
+    sembrar_mascotas()
+    return {"citas_eliminadas": eliminadas, "mascotas_recreadas": db.query(models.Mascota).count()}
